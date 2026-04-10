@@ -30,9 +30,17 @@ desktop.ini
 
 # Parameter files (user data — never commit)
 *.dco
+*.ini
+!requirements.txt
 
 # Private parser library
 lib/
 
 # PyInstaller
 *.spec
+
+# Icon source files (build artifacts)
+*.ico
+*.png
+*.jpg
+!docs/**/*.html

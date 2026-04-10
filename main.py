@@ -1,26 +1,31 @@
 """
-DCO Viewer — Industrial Drive Configuration Comparison Tool
+Config Viewer — Industrial Drive Configuration Comparison Tool  (v3.0)
 
-Desktop application for loading, comparing, and analysing binary configuration
-files (.dco) across multiple drive units.  Displays all parameters in a
-filterable grid with scaled engineering values, column-freeze, drag-reorder,
-vertical rotated headers for compact bit-flag display, and styled Excel export.
+Desktop application for loading, comparing, and analysing multi-format drive
+configuration files across multiple project sites.  Supports binary .dco files
+(DCO Mode) and text-based .ini parameter files (INI Mode) in a single tabbed
+session with independent per-tab state.
 
 Architecture
 ------------
-- GUI:  PyQt5 (QMainWindow, QTableWidget, QCheckBox filter panel, QSplitter)
-- Data: struct-based binary parser (format details in private lib/)
-- I/O:  QFileDialog for directory selection, openpyxl for Excel export
+- GUI:     PyQt5 (QMainWindow, QTabWidget, per-tab sessions, toolbar)
+- Data:    struct-based binary parser + INI text parser (private lib/)
+- I/O:     QFileDialog for file selection, openpyxl for Excel export
+- Icon:    Embedded base64 JPEG — no external icon file required at runtime
+- State:   JSON-backed recent-selection history with exact file tracking
 
 Author: Umang Panchal (github.com/ichumang)
 """
 
 import sys
 import os
-from pathlib import Path
+import json
+import base64
 
-from PyQt5.QtCore import Qt, QSize, QRect, QPoint
-from PyQt5.QtGui import QFont, QColor, QIcon, QPainter, QFontMetrics
+from PyQt5.QtCore import Qt, QSize, QPoint
+from PyQt5.QtGui import (
+    QFont, QColor, QIcon, QPainter, QFontMetrics, QPixmap,
+)
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -40,10 +45,12 @@ from PyQt5.QtWidgets import (
     QFrame,
     QAbstractScrollArea,
     QDialog,
-    QListWidget,
-    QListWidgetItem,
     QDialogButtonBox,
-    QSplitter,
+    QTabWidget,
+    QTabBar,
+    QMenu,
+    QAction,
+    QTextBrowser,
 )
 
 try:
@@ -55,31 +62,101 @@ except ImportError:
     HAS_OPENPYXL = False
 
 
+APP_VERSION = "1.0.0"
+
+
 # ---------------------------------------------------------------------------
-#  Binary format and field definitions are in the private parser library.
-#  This demo references the parser's public interface only.
+#  Embedded application icon (base64-encoded JPEG, 256×256)
+# ---------------------------------------------------------------------------
+#  The icon is baked into the script so the standalone .exe never needs
+#  an external image file.  Qt decodes it at runtime into a QIcon.
+#  (Base64 data omitted from public repo — see NOTICE.md)
+
+_ICON_B64 = ""   # populated in private build
+
+
+def _app_icon():
+    """Return a QIcon from the embedded JPEG, or a null icon if not set."""
+    if not _ICON_B64:
+        return QIcon()
+    raw = base64.b64decode(_ICON_B64)
+    pm = QPixmap()
+    pm.loadFromData(raw, "JPEG")
+    return QIcon(pm)
+
+
+# ---------------------------------------------------------------------------
+#  Recent-selections persistence
+# ---------------------------------------------------------------------------
+#  Stores the last 10 file selections as [{folder, files}, ...] in a
+#  JSON file next to the executable.  Each entry records the exact files
+#  selected (not just the folder) so reopening is one click.
+
+_RECENT_FILE = "configview_recent.json"
+MAX_RECENT = 10
+
+
+def _recent_path():
+    base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+            else os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, _RECENT_FILE)
+
+
+def load_recent():
+    try:
+        with open(_recent_path(), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_recent(entries):
+    with open(_recent_path(), "w", encoding="utf-8") as f:
+        json.dump(entries[:MAX_RECENT], f, indent=2)
+
+
+def add_recent_entry(folder, basenames):
+    entries = load_recent()
+    new = {"folder": folder, "files": basenames}
+    entries = [e for e in entries
+               if not (e["folder"] == folder and e["files"] == basenames)]
+    entries.insert(0, new)
+    save_recent(entries[:MAX_RECENT])
+
+
+# ---------------------------------------------------------------------------
+#  Parser interfaces (stubs — private lib/ provides real implementations)
+# ---------------------------------------------------------------------------
 #
 #  lib/dco_parser.py  (private – not included in this repository)
-#    - STRUCT_FORMAT: little-endian struct format string for .dco files
-#    - COLUMN_DEFS: list of (column_header, category) tuples
-#    - BIT_FLAG_COLUMNS: set of column names that are boolean bit flags
+#    - KONFDAT_FORMAT: struct format string for .dco files (400 bytes)
+#    - COLUMN_DEFS: list of (column_header, category, struct_field, ...) tuples
+#    - BIT_FLAG_COLUMNS: set of column names rendered as boolean x/blank
 #    - decode_record(filename, data) → dict[str, str]
-#    - FILTER_CATEGORIES: dict mapping category name → description
-# ---------------------------------------------------------------------------
+#    - DCO_CATEGORIES: dict mapping category name → colour hex
+#
+#  lib/ini_parser.py  (private – not included in this repository)
+#    - ANT_COLS: column definitions for [Antriebsparameter] section
+#    - PRT_COLS: column definitions for [Prototypen] section
+#    - decode_ini(filepath) → (ant_rows, prt_rows)
+#    - INI_CATEGORIES: dict mapping category name → colour hex
 
-# Public interface stubs — the private lib/ provides the actual implementation.
-# These are shown here so the architecture is clear.
-
-FILTER_CATEGORIES = {
-    "Position":        "Columns related to position-control parameters",
+DCO_FILTER_CATEGORIES = {
+    "Position":        "Encoder position, limits, encoder resolution",
     "Regelung":        "Closed-loop control: P / I / FF gains",
     "Last":            "Load-cell and load-monitoring parameters",
-    "Sicherheiten":    "Safety-related limit switches and monitoring",
+    "Sicherheiten":    "Safety monitoring: standstill, tracking, overspeed",
     "Geschwindigkeit": "Speed setpoints and ramp parameters",
-    "Zweitkanal":      "Redundant (second-channel) safety parameters",
     "Locking":         "Locking / docking position values",
     "Optional":        "Vendor-specific optional fields",
-    "Sonstige":        "Miscellaneous parameters not in the above groups",
+    "Sonstige":        "Miscellaneous parameters",
+}
+
+INI_FILTER_CATEGORIES = {
+    "Position/Geschw./Beschl.": "Position, speed, acceleration",
+    "Sicherheit":               "Safety-related flags and limits",
+    "Antriebstyp":              "Drive type identifiers and mode bits",
+    "Sonstige":                 "Miscellaneous flags and settings",
 }
 
 
@@ -90,11 +167,7 @@ FILTER_CATEGORIES = {
 # ---------------------------------------------------------------------------
 
 class VerticalHeaderView(QHeaderView):
-    """A QHeaderView that renders certain column headers as vertical text.
-
-    Columns whose name is in *vertical_columns* are painted bottom-to-top.
-    All other columns are painted normally.
-    """
+    """A QHeaderView that renders certain column headers as vertical text."""
 
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
@@ -102,12 +175,10 @@ class VerticalHeaderView(QHeaderView):
         self._col_names = []
 
     def set_vertical_columns(self, names, col_names):
-        """Tell the header which columns should be vertical."""
         self._vertical_columns = set(names)
         self._col_names = list(col_names)
 
     def sectionSizeFromContents(self, logicalIndex):
-        """Override size hint so vertical columns stay narrow."""
         base = super().sectionSizeFromContents(logicalIndex)
         if logicalIndex < len(self._col_names):
             if self._col_names[logicalIndex] in self._vertical_columns:
@@ -117,7 +188,6 @@ class VerticalHeaderView(QHeaderView):
         return base
 
     def paintSection(self, painter, rect, logicalIndex):
-        """Custom paint: rotate text for bit-flag columns."""
         if logicalIndex < len(self._col_names):
             name = self._col_names[logicalIndex]
             if name in self._vertical_columns:
@@ -136,593 +206,540 @@ class VerticalHeaderView(QHeaderView):
 
 
 # ---------------------------------------------------------------------------
-#  Freeze-columns picker dialog
+#  TablePane — reusable table widget with filter, sort, drag-reorder,
+#  vertical headers, and category-coloured Excel export.
 # ---------------------------------------------------------------------------
 
-class FreezeDialog(QDialog):
-    """Dialog that lets the user tick which columns to freeze on the left."""
+class TablePane(QWidget):
+    """Encapsulates a QTableWidget with sort (context menu), drag-reorder,
+    vertical bit-flag headers, and styled Excel export.
 
-    def __init__(self, available_columns, currently_frozen, parent=None):
+    This is the core rendering component shared by both DCO and INI modes.
+    """
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Freeze Columns")
-        self.setMinimumSize(350, 450)
-
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        info = QLabel(
-            "Select columns to freeze on the left side.\n"
-            "Frozen columns stay visible when you scroll right."
+        self.table = QTableWidget()
+        self._header = VerticalHeaderView(Qt.Horizontal, self.table)
+        self.table.setHorizontalHeader(self._header)
+        self._setup_table(self.table)
+
+        # drag-reorder
+        self._header.setSectionsMovable(True)
+        self._header.setDragEnabled(True)
+        self._header.setDragDropMode(self._header.InternalMove)
+
+        # context-menu sort
+        self._header.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._header.customContextMenuRequested.connect(self._header_ctx)
+
+        layout.addWidget(self.table)
+
+        self.columns = []
+        self.rows = []
+        self._sort_col = -1
+        self._sort_asc = True
+
+    @staticmethod
+    def _setup_table(table):
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setShowGrid(True)
+        table.setAlternatingRowColors(True)
+        table.setSelectionMode(QTableWidget.ContiguousSelection)
+        table.setSelectionBehavior(QTableWidget.SelectItems)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setMinimumSectionSize(20)
+
+    def _header_ctx(self, pos):
+        """Right-click context menu: Sort A→Z, Sort Z→A, Clear Sort."""
+        idx = self._header.logicalIndexAt(pos)
+        if idx < 0:
+            return
+        menu = QMenu(self)
+        a_asc = menu.addAction("Sort A → Z")
+        a_desc = menu.addAction("Sort Z → A")
+        menu.addSeparator()
+        a_clear = menu.addAction("Clear Sort")
+
+        action = menu.exec_(self._header.mapToGlobal(pos))
+        if action == a_asc:
+            self._sort_col = idx
+            self._sort_asc = True
+            self._apply_sort()
+        elif action == a_desc:
+            self._sort_col = idx
+            self._sort_asc = False
+            self._apply_sort()
+        elif action == a_clear:
+            self._sort_col = -1
+            self._apply_sort()
+
+    def _apply_sort(self):
+        """Re-sort rows and repopulate table."""
+        # Sorting logic deferred to populate()
+        self.populate(self.columns, self.rows)
+
+    def populate(self, columns, rows):
+        """Fill the table with data.  columns: list[str], rows: list[dict]."""
+        self.columns = columns
+        self.rows = list(rows)
+
+        if self._sort_col >= 0 and self._sort_col < len(columns):
+            key = columns[self._sort_col]
+            self.rows.sort(
+                key=lambda r: r.get(key, ""),
+                reverse=not self._sort_asc,
+            )
+
+        self.table.clear()
+        self.table.setRowCount(len(self.rows))
+        self.table.setColumnCount(len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
+
+        for ri, row in enumerate(self.rows):
+            for ci, col in enumerate(columns):
+                self.table.setItem(ri, ci, QTableWidgetItem(row.get(col, "")))
+
+        self.table.resizeColumnsToContents()
+        self._apply_compact_bit_columns()
+
+    def _apply_compact_bit_columns(self):
+        """Narrow bit-flag columns to 30 px with vertical header text."""
+        # bit_flag_columns loaded from private lib/
+        bit_flag_columns = set()   # placeholder
+        bit_names = [c for c in self.columns if c in bit_flag_columns]
+        for ci, col_name in enumerate(self.columns):
+            if col_name in bit_flag_columns:
+                self.table.setColumnWidth(ci, 30)
+        self._header.set_vertical_columns(bit_names, self.columns)
+
+
+# ---------------------------------------------------------------------------
+#  TabSession — one per tab.  Owns mode, filter bar, table pane(s).
+# ---------------------------------------------------------------------------
+
+class TabSession(QWidget):
+    """Represents a single tab.  States:
+      - mode=None  → placeholder with mode-selection buttons
+      - mode='dco' → filter bar + single TablePane
+      - mode='ini' → filter bar + sub-tabs (Antriebsparameter / Prototypen)
+    """
+
+    MODE_COLORS = {
+        "dco": ("#2563EB", "#EFF6FF", "#BFDBFE"),   # blue
+        "ini": ("#D97706", "#FFFBEB", "#FDE68A"),    # amber
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.mode = None
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._filter_checks = {}
+        self._pane = None        # single pane (DCO)
+        self._sub_tabs = None    # sub-tab widget (INI)
+        self._pane_ant = None    # INI Antriebsparameter
+        self._pane_prt = None    # INI Prototypen
+        self._build_placeholder()
+
+    # ── placeholder (no mode selected) ──────────────────────────────
+
+    def _build_placeholder(self):
+        """Show centered mode-selection buttons."""
+        ph = QWidget()
+        vbox = QVBoxLayout(ph)
+        vbox.addStretch()
+
+        icon_lbl = QLabel("\U0001f4c4")
+        icon_lbl.setAlignment(Qt.AlignCenter)
+        icon_lbl.setStyleSheet("font-size: 40px;")
+        vbox.addWidget(icon_lbl)
+
+        title = QLabel("Choose a mode to start")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        vbox.addWidget(title)
+
+        sub = QLabel(
+            "Select DCO to load binary .dco files, "
+            "or INI to load drive configuration files."
         )
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        sub.setAlignment(Qt.AlignCenter)
+        sub.setStyleSheet("color: gray; font-size: 12px;")
+        sub.setWordWrap(True)
+        vbox.addWidget(sub)
 
-        self.list_widget = QListWidget()
-        for col in available_columns:
-            item = QListWidgetItem(col)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            if col in currently_frozen:
-                item.setCheckState(Qt.Checked)
-            else:
-                item.setCheckState(Qt.Unchecked)
-            self.list_widget.addItem(item)
-        layout.addWidget(self.list_widget)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        btn_dco = QPushButton("\u25cf  DCO Mode")
+        btn_dco.setFixedSize(150, 40)
+        btn_dco.setStyleSheet(
+            "background-color:#2563EB; color:white; border-radius:6px; "
+            "font-weight:bold;"
         )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        btn_dco.clicked.connect(lambda: self._set_mode("dco"))
+        btn_row.addWidget(btn_dco)
 
-    def selected_columns(self):
-        """Return list of column names that were checked."""
-        result = []
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if item.checkState() == Qt.Checked:
-                result.append(item.text())
-        return result
+        btn_ini = QPushButton("\u25cf  SC.INI Mode")
+        btn_ini.setFixedSize(150, 40)
+        btn_ini.setStyleSheet(
+            "background-color:#D97706; color:white; border-radius:6px; "
+            "font-weight:bold;"
+        )
+        btn_ini.clicked.connect(lambda: self._set_mode("ini"))
+        btn_row.addWidget(btn_ini)
+
+        btn_row.addStretch()
+        vbox.addLayout(btn_row)
+        vbox.addStretch()
+
+        self._placeholder = ph
+        self._layout.addWidget(ph)
+
+    def _set_mode(self, mode):
+        """Switch this tab from placeholder to a live data view."""
+        if self._placeholder:
+            self._placeholder.setVisible(False)
+            self._layout.removeWidget(self._placeholder)
+            self._placeholder.deleteLater()
+            self._placeholder = None
+        self.mode = mode
+        self._build_mode_ui()
+
+    def _build_mode_ui(self):
+        """Build filter bar + table pane(s) for the active mode."""
+        cats = (DCO_FILTER_CATEGORIES if self.mode == "dco"
+                else INI_FILTER_CATEGORIES)
+
+        # filter bar
+        fbox = QGroupBox("Filter")
+        flay = QHBoxLayout()
+        fbox.setLayout(flay)
+        for cat in cats:
+            cb = QCheckBox(cat)
+            cb.setChecked(True)
+            cb.stateChanged.connect(self._on_filter_changed)
+            flay.addWidget(cb)
+            self._filter_checks[cat] = cb
+        self._layout.addWidget(fbox)
+
+        if self.mode == "dco":
+            self._pane = TablePane()
+            self._layout.addWidget(self._pane, 1)
+        else:
+            self._sub_tabs = QTabWidget()
+            self._pane_ant = TablePane()
+            self._pane_prt = TablePane()
+            self._sub_tabs.addTab(self._pane_ant, "Antriebsparameter")
+            self._sub_tabs.addTab(self._pane_prt, "Prototypen")
+            self._layout.addWidget(self._sub_tabs, 1)
+
+    def _on_filter_changed(self):
+        """Re-filter visible columns when a checkbox changes."""
+        # Column filtering uses private lib/ category mappings.
+        pass
 
 
 # ---------------------------------------------------------------------------
 #  Main application window
 # ---------------------------------------------------------------------------
 
-class DCOViewApp(QMainWindow):
-    """Main application window — multi-file comparison grid with column freeze,
-    drag-reorder, vertical headers, and styled Excel export."""
+class ConfigViewerApp(QMainWindow):
+    """Main window: toolbar (mode dropdown, folder, recent, export, help),
+    tab bar, status bar with version label."""
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DCO Viewer — scaled values")
+        self.setWindowTitle("Config Viewer")
         self.resize(1200, 700)
 
-        self.folder = ""
-        self.rows = []
-        self.filter_checks = {}
-        self._drag_order = []
-        self._user_dragged = False
-        self._frozen_columns = []
-        self._syncing_scroll = False
+        # Icon is embedded — no external file needed.
+        self.setWindowIcon(_app_icon())
 
-        # Column definitions and bit-flag column set loaded from private lib/
-        # self._column_defs = lib.COLUMN_DEFS
-        # self._bit_flag_columns = lib.BIT_FLAG_COLUMNS
-
+        self._tab_ctr = 0
         self._init_ui()
         self._init_status()
 
-    # ── build UI ──────────────────────────────────────────────────────
+    # ── UI construction ──────────────────────────────────────────────
 
     def _init_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        main = QVBoxLayout()
-        central.setLayout(main)
+        main = QVBoxLayout(central)
+        main.setContentsMargins(4, 2, 4, 2)
 
-        # top: folder selection + freeze / export buttons
-        top = QHBoxLayout()
-        self.lbl_folder = QLabel("No folder selected")
-        self.lbl_folder.setStyleSheet("color: gray;")
-        self.lbl_folder.setMinimumWidth(400)
+        # toolbar row
+        toolbar = QHBoxLayout()
 
-        btn_folder = QPushButton("Select DCO folder")
-        btn_folder.clicked.connect(self.on_select_folder)
-
-        self.btn_freeze = QPushButton("Freeze Columns...")
-        self.btn_freeze.setToolTip(
-            "Choose columns to freeze on the left (like Excel)"
+        # mode button (3-state smart dropdown)
+        self._mode_btn = QPushButton("\u2699 Mode\u2026 \u25be")
+        self._mode_btn.setFixedWidth(140)
+        self._mode_btn.setStyleSheet(
+            "background-color:#6b7280; color:white; border-radius:4px; "
+            "font-weight:bold; padding:6px 12px;"
         )
-        self.btn_freeze.clicked.connect(self.on_freeze_columns)
+        self._mode_btn.clicked.connect(self._mode_menu)
+        toolbar.addWidget(self._mode_btn)
 
-        self.btn_unfreeze = QPushButton("Unfreeze All")
-        self.btn_unfreeze.setToolTip("Remove all frozen columns")
-        self.btn_unfreeze.clicked.connect(self.on_unfreeze_all)
-        self.btn_unfreeze.setEnabled(False)
+        # folder button
+        self._btn_folder = QPushButton("Select Folder")
+        self._btn_folder.clicked.connect(self._on_select_folder)
+        toolbar.addWidget(self._btn_folder)
 
-        self.btn_export = QPushButton("Export as Excel")
-        self.btn_export.setToolTip(
-            "Export the currently visible table to a styled .xlsx file"
-        )
-        self.btn_export.clicked.connect(self.on_export_excel)
-        self.btn_export.setEnabled(False)
+        # recent button
+        self._btn_recent = QPushButton("\u25be Recent")
+        self._btn_recent.clicked.connect(self._on_recent_menu)
+        toolbar.addWidget(self._btn_recent)
 
-        top.addWidget(self.lbl_folder, 1)
-        top.addWidget(btn_folder)
-        top.addWidget(self.btn_freeze)
-        top.addWidget(self.btn_unfreeze)
-        top.addWidget(self.btn_export)
-        main.addLayout(top)
+        # breadcrumb
+        self._lbl_path = QLabel("Choose a mode to begin")
+        self._lbl_path.setStyleSheet("color:#999; padding:0 8px;")
+        toolbar.addWidget(self._lbl_path, 1)
 
-        # filter bar — 9 category checkboxes
-        filter_box = QGroupBox("Filter")
-        flay = QHBoxLayout()
-        filter_box.setLayout(flay)
+        # export
+        self._btn_export = QPushButton("Export as Excel")
+        self._btn_export.setEnabled(False)
+        self._btn_export.clicked.connect(self._on_export)
+        toolbar.addWidget(self._btn_export)
 
-        for cat in FILTER_CATEGORIES:
-            cb = QCheckBox(cat)
-            cb.setChecked(True)
-            cb.stateChanged.connect(self.on_filter_changed)
-            flay.addWidget(cb)
-            self.filter_checks[cat] = cb
+        # help
+        self._btn_help = QPushButton("?")
+        self._btn_help.setFixedWidth(32)
+        self._btn_help.clicked.connect(self._on_help)
+        toolbar.addWidget(self._btn_help)
 
-        main.addWidget(filter_box)
+        main.addLayout(toolbar)
 
-        # table area: frozen table (left) + scrollable table (right)
-        self.table_container = QHBoxLayout()
-        self.table_container.setSpacing(0)
+        # tab bar
+        self._tabs = QTabWidget()
+        self._tabs.setTabsClosable(True)
+        self._tabs.tabCloseRequested.connect(self._close_tab)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+        main.addWidget(self._tabs, 1)
 
-        # frozen (left) table — hidden by default
-        self.frozen_table = QTableWidget()
-        self._frozen_header = VerticalHeaderView(
-            Qt.Horizontal, self.frozen_table
-        )
-        self.frozen_table.setHorizontalHeader(self._frozen_header)
-        self._setup_table_common(self.frozen_table)
-        self.frozen_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.frozen_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.frozen_table.setFrameShape(QFrame.NoFrame)
-        self.frozen_table.setVisible(False)
-        self._frozen_header.setSectionsMovable(False)
-
-        # separator line
-        self.freeze_separator = QFrame()
-        self.freeze_separator.setFrameShape(QFrame.VLine)
-        self.freeze_separator.setFrameShadow(QFrame.Sunken)
-        self.freeze_separator.setLineWidth(2)
-        self.freeze_separator.setVisible(False)
-
-        # main (right) scrollable table
-        self.table = QTableWidget()
-        self._main_header = VerticalHeaderView(Qt.Horizontal, self.table)
-        self.table.setHorizontalHeader(self._main_header)
-        self._setup_table_common(self.table)
-        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        # enable drag-and-drop column reordering on the main table
-        self._main_header.setSectionsMovable(True)
-        self._main_header.setDragEnabled(True)
-        self._main_header.setDragDropMode(self._main_header.InternalMove)
-        self._main_header.sectionMoved.connect(self._on_column_dragged)
-
-        # synchronize vertical scrolling between frozen and main tables
-        self.frozen_table.verticalScrollBar().valueChanged.connect(
-            self._sync_scroll_from_frozen
-        )
-        self.table.verticalScrollBar().valueChanged.connect(
-            self._sync_scroll_from_main
-        )
-
-        self.table_container.addWidget(self.frozen_table)
-        self.table_container.addWidget(self.freeze_separator)
-        self.table_container.addWidget(self.table, 1)
-
-        main.addLayout(self.table_container, 1)
-
-    def _setup_table_common(self, table):
-        """Apply common settings to both frozen and main tables."""
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setShowGrid(True)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
-        table.setAlternatingRowColors(True)
-        table.setSelectionMode(QTableWidget.NoSelection)
-        table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setMinimumSectionSize(20)
+        # first empty tab
+        self._new_tab()
 
     def _init_status(self):
         self.status = QStatusBar()
         self.setStatusBar(self.status)
-        self.status.showMessage("Ready — select folder with .dco files")
-
-    # ── scroll synchronization ────────────────────────────────────────
-
-    def _sync_scroll_from_frozen(self, value):
-        if self._syncing_scroll:
-            return
-        self._syncing_scroll = True
-        self.table.verticalScrollBar().setValue(value)
-        self._syncing_scroll = False
-
-    def _sync_scroll_from_main(self, value):
-        if self._syncing_scroll:
-            return
-        self._syncing_scroll = True
-        self.frozen_table.verticalScrollBar().setValue(value)
-        self._syncing_scroll = False
-
-    # ── slots ─────────────────────────────────────────────────────────
-
-    def on_select_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select folder with .dco files",
-            os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly,
+        # permanent version label — bottom-right corner
+        ver_label = QLabel(f"v{APP_VERSION}")
+        ver_label.setStyleSheet("color:#999; font-size:11px; padding-right:4px;")
+        self.status.addPermanentWidget(ver_label)
+        self.status.showMessage(
+            "Ready — choose a mode (DCO / INI) in the tab to get started"
         )
-        if not folder:
-            return
-        self.folder = folder
-        self.lbl_folder.setText(folder)
-        self.lbl_folder.setStyleSheet("color: black;")
-        self.load_files()
 
-    def on_filter_changed(self):
-        self.populate_table()
+    # ── tab management ───────────────────────────────────────────────
 
-    def on_freeze_columns(self):
-        """Open dialog to let the user pick columns to freeze."""
-        columns = self._visible_columns()
-        if not columns:
+    def _new_tab(self, mode=None):
+        self._tab_ctr += 1
+        session = TabSession()
+        if mode:
+            session._set_mode(mode)
+        title = f"New Tab {self._tab_ctr}"
+        idx = self._tabs.addTab(session, f"\u2699 {title}")
+        self._tabs.setCurrentIndex(idx)
+        return session
+
+    def _close_tab(self, idx):
+        if self._tabs.count() > 1:
+            self._tabs.removeTab(idx)
+
+    def _cur_session(self):
+        w = self._tabs.currentWidget()
+        return w if isinstance(w, TabSession) else None
+
+    def _on_tab_changed(self, idx):
+        self._refresh_toolbar()
+
+    def _refresh_toolbar(self):
+        """Update mode button colour and label based on the active tab."""
+        session = self._cur_session()
+        if not session or not session.mode:
+            self._mode_btn.setStyleSheet(
+                "background-color:#6b7280; color:white; border-radius:4px; "
+                "font-weight:bold; padding:6px 12px;"
+            )
+            self._mode_btn.setText("\u2699 Mode\u2026 \u25be")
+        else:
+            clr = TabSession.MODE_COLORS[session.mode][0]
+            lbl = "DCO" if session.mode == "dco" else "SC.INI"
+            self._mode_btn.setStyleSheet(
+                f"background-color:{clr}; color:white; border-radius:4px; "
+                "font-weight:bold; padding:6px 12px;"
+            )
+            self._mode_btn.setText(f"\u2699 {lbl} Mode \u25be")
+
+    # ── mode dropdown (3-state smart button) ─────────────────────────
+
+    def _mode_menu(self):
+        """Context-sensitive dropdown:
+          State A (mode=None):  Open as DCO tab / Open as INI tab
+          State B (mode set, no data): Switch this tab / Open new tab
+          State C (data loaded): New DCO tab / New INI tab
+        """
+        menu = QMenu(self)
+        session = self._cur_session()
+
+        if not session or not session.mode:
+            a_dco = menu.addAction("Open as DCO tab")
+            a_ini = menu.addAction("Open as SC.INI tab")
+            action = menu.exec_(
+                self._mode_btn.mapToGlobal(QPoint(0, self._mode_btn.height()))
+            )
+            if action == a_dco and session:
+                session._set_mode("dco")
+                self._refresh_toolbar()
+            elif action == a_ini and session:
+                session._set_mode("ini")
+                self._refresh_toolbar()
+        else:
+            a_new_dco = menu.addAction("New DCO tab")
+            a_new_ini = menu.addAction("New SC.INI tab")
+            action = menu.exec_(
+                self._mode_btn.mapToGlobal(QPoint(0, self._mode_btn.height()))
+            )
+            if action == a_new_dco:
+                self._new_tab("dco")
+                self._refresh_toolbar()
+            elif action == a_new_ini:
+                self._new_tab("ini")
+                self._refresh_toolbar()
+
+    # ── file selection ───────────────────────────────────────────────
+
+    def _on_select_folder(self):
+        session = self._cur_session()
+        if not session or not session.mode:
             QMessageBox.information(
-                self, "No columns",
-                "Load some .dco files first, then freeze columns."
+                self, "No mode", "Choose DCO or SC.INI mode first."
             )
             return
 
-        dlg = FreezeDialog(columns, set(self._frozen_columns), self)
-        if dlg.exec_() == QDialog.Accepted:
-            selected = dlg.selected_columns()
-            self._frozen_columns = selected
-            self.btn_unfreeze.setEnabled(bool(selected))
-            self.populate_table()
+        ext = "*.dco" if session.mode == "dco" else "*.ini"
+        label = "DCO files" if session.mode == "dco" else "INI files"
+        files, _ = QFileDialog.getOpenFileNames(
+            self, f"Select {label}",
+            os.path.expanduser("~"),
+            f"{label} ({ext});;All files (*)",
+        )
+        if not files:
+            return
 
-    def on_unfreeze_all(self):
-        """Remove all frozen columns."""
-        self._frozen_columns = []
-        self.btn_unfreeze.setEnabled(False)
-        self.populate_table()
+        # Validate: check all files match the expected extension
+        # _validate_and_load(session, files)
+        # Private parser invoked here — omitted from public repo.
 
-    # ── Excel export ──────────────────────────────────────────────────
+        folder = os.path.dirname(files[0])
+        basenames = [os.path.basename(f) for f in files]
+        add_recent_entry(folder, basenames)
+        self._lbl_path.setText(f"\U0001f4c2 {folder}")
+        self.status.showMessage(f"Loaded {len(files)} file(s)")
+        self._btn_export.setEnabled(True)
 
-    # Category → header fill colour (hex without #)
-    _CAT_COLOURS = {
-        "Position":        "4472C4",
-        "Regelung":        "ED7D31",
-        "Last":            "A5A5A5",
-        "Sicherheiten":    "FFC000",
-        "Geschwindigkeit": "5B9BD5",
-        "Zweitkanal":      "70AD47",
-        "Locking":         "9E480E",
-        "Optional":        "7030A0",
-        "Sonstige":        "BF8F00",
-        None:              "2F5496",
-    }
+    # ── recent selections ────────────────────────────────────────────
 
-    def on_export_excel(self):
-        """Export the currently visible columns to a formatted .xlsx file."""
+    def _on_recent_menu(self):
+        entries = load_recent()
+        if not entries:
+            QMessageBox.information(self, "Recent", "No recent selections.")
+            return
+        menu = QMenu(self)
+        for entry in entries:
+            folder = entry["folder"]
+            files = entry["files"]
+            count = len(files)
+            short = os.path.basename(folder)
+            label = f"{short}  ({count} file{'s' if count != 1 else ''})"
+            act = menu.addAction(label)
+            act.setData(entry)
+        menu.addSeparator()
+        a_clear = menu.addAction("Clear Recently Opened")
+
+        action = menu.exec_(
+            self._btn_recent.mapToGlobal(
+                QPoint(0, self._btn_recent.height())
+            )
+        )
+        if action == a_clear:
+            save_recent([])
+            self.status.showMessage("Recent selections cleared.", 3000)
+        elif action and action.data():
+            # Reopen the exact file selection
+            entry = action.data()
+            # _reopen_files(entry["folder"], entry["files"])
+            pass
+
+    # ── export ───────────────────────────────────────────────────────
+
+    def _on_export(self):
         if not HAS_OPENPYXL:
             QMessageBox.warning(
                 self, "Missing library",
-                "The 'openpyxl' package is required for Excel export.\n\n"
-                "Install it with:\n   pip install openpyxl"
+                "Install openpyxl for Excel export:\n   pip install openpyxl"
             )
             return
+        # Export logic uses category colours from private lib/
+        # _export_excel(session, path)
+        pass
 
-        if not self.rows:
-            QMessageBox.information(
-                self, "No data",
-                "Load some .dco files first before exporting."
-            )
-            return
+    # ── help dialog ──────────────────────────────────────────────────
 
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export as Excel",
-            os.path.join(self.folder or os.path.expanduser("~"),
-                         "dco_export.xlsx"),
-            "Excel files (*.xlsx)",
+    def _on_help(self):
+        """Show bilingual EN/DE help dialog."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Help — Config Viewer")
+        dlg.resize(700, 500)
+        layout = QVBoxLayout(dlg)
+
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(
+            "<h2>Config Viewer — Quick Reference</h2>"
+            "<table width='100%' cellpadding='8'>"
+            "<tr><td valign='top' width='50%'>"
+            "<h3>English</h3>"
+            "<b>Open files:</b> Choose a mode (DCO or SC.INI), "
+            "then click Select Folder.<br>"
+            "<b>Filter:</b> Use checkboxes to show/hide column groups.<br>"
+            "<b>Sort:</b> Right-click any column header.<br>"
+            "<b>Export:</b> Click Export as Excel.<br>"
+            "<b>Tabs:</b> Use the mode dropdown to open new tabs."
+            "</td><td valign='top' width='50%'>"
+            "<h3>Deutsch</h3>"
+            "<b>Dateien öffnen:</b> Modus wählen (DCO oder SC.INI), "
+            "dann Select Folder klicken.<br>"
+            "<b>Filter:</b> Checkboxen ein/ausschalten.<br>"
+            "<b>Sortieren:</b> Rechtsklick auf Spaltenüberschrift.<br>"
+            "<b>Export:</b> Export as Excel klicken.<br>"
+            "<b>Tabs:</b> Über Modus-Dropdown neue Tabs öffnen."
+            "</td></tr></table>"
         )
-        if not path:
-            return
+        layout.addWidget(browser)
 
-        try:
-            self._write_xlsx(path)
-            QMessageBox.information(
-                self, "Export complete",
-                f"File saved to:\n{path}"
-            )
-            self.status.showMessage(f"Exported to {path}")
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Export error",
-                f"Could not write Excel file:\n{e}"
-            )
+        btn = QDialogButtonBox(QDialogButtonBox.Close)
+        btn.rejected.connect(dlg.reject)
+        layout.addWidget(btn)
+        dlg.exec_()
 
-    def _write_xlsx(self, path):
-        """Build and save the styled workbook.
 
-        Layout:
-          Row 1 — category colour band (bold white text on category colour)
-          Row 2 — column headers (bold black on lighter tint)
-          Row 3+ — data rows (centred, thin borders)
-          Freeze panes at A3, auto-filter on row 2
-        """
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "DCO Data"
+# ---------------------------------------------------------------------------
+# DPI awareness — must be set before QApplication.
+# ---------------------------------------------------------------------------
 
-        columns = self._visible_columns()
-        # Header→category lookup is provided by the private parser.
-        # cat_map = {h: cat for h, cat in self._column_defs}
-
-        thin_border = Border(
-            left=Side(style="thin"), right=Side(style="thin"),
-            top=Side(style="thin"), bottom=Side(style="thin"),
-        )
-
-        # Row 1: category band
-        for ci, col_name in enumerate(columns, start=1):
-            # cat = cat_map.get(col_name)
-            cat = None  # placeholder — private lib resolves this
-            hex_colour = self._CAT_COLOURS.get(cat, self._CAT_COLOURS[None])
-            cell = ws.cell(row=1, column=ci,
-                           value=cat if cat else "General")
-            cell.font = XlFont(bold=True, color="FFFFFF", size=9)
-            cell.fill = PatternFill("solid", fgColor=hex_colour)
-            cell.alignment = Alignment(horizontal="center")
-            cell.border = thin_border
-
-        # Row 2: column headers (lighter tint)
-        for ci, col_name in enumerate(columns, start=1):
-            cat = None
-            hex_colour = self._CAT_COLOURS.get(cat, self._CAT_COLOURS[None])
-            cell = ws.cell(row=2, column=ci, value=col_name)
-            cell.font = XlFont(bold=True, color="000000", size=10)
-            cell.fill = PatternFill("solid", fgColor=self._lighter(hex_colour))
-            cell.alignment = Alignment(horizontal="center", wrap_text=True)
-            cell.border = thin_border
-
-        # Data rows
-        data_font = XlFont(size=10)
-        for ri, row in enumerate(self.rows, start=3):
-            for ci, col_name in enumerate(columns, start=1):
-                value = row.get(col_name, "")
-                cell = ws.cell(row=ri, column=ci, value=value)
-                cell.font = data_font
-                cell.alignment = Alignment(horizontal="center")
-                cell.border = thin_border
-
-        # Auto-fit column widths
-        for ci, col_name in enumerate(columns, start=1):
-            max_len = len(col_name)
-            for row in self.rows:
-                val = row.get(col_name, "")
-                if len(val) > max_len:
-                    max_len = len(val)
-            width = min(max_len + 4, 40)
-            ws.column_dimensions[get_column_letter(ci)].width = width
-
-        ws.freeze_panes = "A3"
-        last_col = get_column_letter(len(columns))
-        ws.auto_filter.ref = f"A2:{last_col}{2 + len(self.rows)}"
-
-        wb.save(path)
-
-    @staticmethod
-    def _lighter(hex_colour):
-        """Return a lighter tint of a hex colour (blend 40 % toward white)."""
-        r = int(hex_colour[0:2], 16)
-        g = int(hex_colour[2:4], 16)
-        b = int(hex_colour[4:6], 16)
-        factor = 0.4
-        r = int(r + (255 - r) * factor)
-        g = int(g + (255 - g) * factor)
-        b = int(b + (255 - b) * factor)
-        return f"{r:02X}{g:02X}{b:02X}"
-
-    # ── data loading ──────────────────────────────────────────────────
-
-    def load_files(self):
-        """Scan the selected folder for .dco files, parse each one."""
-        self.rows = []
-        if not self.folder:
-            return
-
-        files = [f for f in sorted(os.listdir(self.folder))
-                 if f.lower().endswith(".dco")]
-
-        if not files:
-            QMessageBox.information(
-                self, "No files", "No .dco files in selected folder."
-            )
-            return
-
-        for name in files:
-            full = os.path.join(self.folder, name)
-            try:
-                with open(full, "rb") as fh:
-                    data = fh.read()
-                # row = lib.decode_record(name, data)  # private parser
-                row = {"Name": name}  # placeholder
-                self.rows.append(row)
-            except Exception as e:
-                QMessageBox.warning(
-                    self, "Read error",
-                    f"Could not read {name}:\n{e}"
-                )
-
-        self.populate_table()
-
-    # ── column ordering ───────────────────────────────────────────────
-
-    def _visible_columns(self):
-        """Return list of column headers whose category checkbox is on.
-
-        If the user has dragged columns, the visible subset is returned
-        in the user's custom drag order (with any newly-visible columns
-        appended at the end).  Otherwise the default order is used.
-        """
-        # The private parser provides COLUMN_DEFS: list[(header, category)]
-        # Here we filter based on active checkboxes.
-        default = []
-        # for header, cat in self._column_defs:
-        #     if cat is None or self.filter_checks.get(cat, cb).isChecked():
-        #         default.append(header)
-
-        if not self._user_dragged or not self._drag_order:
-            return default
-
-        visible_set = set(default)
-        ordered = [h for h in self._drag_order if h in visible_set]
-        ordered_set = set(ordered)
-        for h in default:
-            if h not in ordered_set:
-                ordered.append(h)
-        return ordered
-
-    # ── drag-order tracking ───────────────────────────────────────────
-
-    def _on_column_dragged(self, _logical, _old_vis, _new_vis):
-        """Called by Qt whenever the user drags a column header."""
-        self._user_dragged = True
-        self._capture_drag_order()
-
-    def _capture_drag_order(self):
-        """Snapshot the current visual column order after a drag.
-
-        The drag order includes both frozen and non-frozen columns,
-        so that unfreezing later preserves the user's arrangement.
-        """
-        order = list(self._frozen_columns)
-        frozen_set = set(self._frozen_columns)
-
-        header = self.table.horizontalHeader()
-        n = self.table.columnCount()
-        for vis in range(n):
-            logical = header.logicalIndex(vis)
-            item = self.table.horizontalHeaderItem(logical)
-            if item and item.text() not in frozen_set:
-                order.append(item.text())
-        self._drag_order = order
-
-    # ── table population ──────────────────────────────────────────────
-
-    def populate_table(self):
-        """Rebuild both frozen and main tables from current data + filters."""
-        self.table.setSortingEnabled(False)
-        self.frozen_table.setSortingEnabled(False)
-        self.table.clear()
-        self.frozen_table.clear()
-
-        if not self.rows:
-            self.table.setRowCount(0)
-            self.table.setColumnCount(0)
-            self.frozen_table.setRowCount(0)
-            self.frozen_table.setColumnCount(0)
-            self.frozen_table.setVisible(False)
-            self.freeze_separator.setVisible(False)
-            return
-
-        all_columns = self._visible_columns()
-
-        frozen_set = set(self._frozen_columns)
-        frozen_cols = [c for c in self._frozen_columns
-                       if c in set(all_columns)]
-        scrollable_cols = [c for c in all_columns if c not in frozen_set]
-
-        has_frozen = bool(frozen_cols)
-        self.frozen_table.setVisible(has_frozen)
-        self.freeze_separator.setVisible(has_frozen)
-
-        # populate frozen table
-        if has_frozen:
-            self.frozen_table.setRowCount(len(self.rows))
-            self.frozen_table.setColumnCount(len(frozen_cols))
-            self.frozen_table.setHorizontalHeaderLabels(frozen_cols)
-
-            for r, row in enumerate(self.rows):
-                for c, col in enumerate(frozen_cols):
-                    text = row.get(col, "")
-                    self.frozen_table.setItem(
-                        r, c, QTableWidgetItem(text)
-                    )
-
-            self.frozen_table.resizeColumnsToContents()
-            self._apply_compact_bit_columns(self.frozen_table, frozen_cols)
-            total_w = sum(
-                self.frozen_table.columnWidth(c)
-                for c in range(len(frozen_cols))
-            ) + 4
-            self.frozen_table.setFixedWidth(total_w)
-
-            for r in range(len(self.rows)):
-                h = self.frozen_table.rowHeight(r)
-                self.table.setRowHeight(r, h)
-
-        # populate main (scrollable) table
-        self.table.setRowCount(len(self.rows))
-        self.table.setColumnCount(len(scrollable_cols))
-        self.table.setHorizontalHeaderLabels(scrollable_cols)
-
-        for r, row in enumerate(self.rows):
-            for c, col in enumerate(scrollable_cols):
-                text = row.get(col, "")
-                self.table.setItem(r, c, QTableWidgetItem(text))
-
-        self.table.resizeColumnsToContents()
-        self._apply_compact_bit_columns(self.table, scrollable_cols)
-
-        # match row heights between frozen and main tables
-        if has_frozen:
-            for r in range(len(self.rows)):
-                fh = self.frozen_table.rowHeight(r)
-                mh = self.table.rowHeight(r)
-                h = max(fh, mh)
-                self.frozen_table.setRowHeight(r, h)
-                self.table.setRowHeight(r, h)
-
-        total_cols = len(frozen_cols) + len(scrollable_cols)
-        frozen_info = f" ({len(frozen_cols)} frozen)" if has_frozen else ""
-        self.status.showMessage(
-            f"Loaded {len(self.rows)} file(s); "
-            f"{total_cols} columns{frozen_info}"
-        )
-        self.btn_export.setEnabled(bool(self.rows))
-
-    # ── compact bit-flag columns ──────────────────────────────────────
-
-    @staticmethod
-    def _apply_compact_bit_columns(table, columns):
-        """Make bit-flag columns narrow (30 px) with vertical header text.
-
-        Bit-flag columns only ever show 'x' or '', so they don't
-        need much width.  The VerticalHeaderView handles painting
-        those headers as rotated text.
-        """
-        COMPACT_WIDTH = 30
-        # bit_flag_columns loaded from private lib/
-        bit_flag_columns = set()  # placeholder
-        bit_names = [c for c in columns if c in bit_flag_columns]
-        for ci, col_name in enumerate(columns):
-            if col_name in bit_flag_columns:
-                table.setColumnWidth(ci, COMPACT_WIDTH)
-                item = table.horizontalHeaderItem(ci)
-                if item is None:
-                    item = QTableWidgetItem(col_name)
-                    table.setHorizontalHeaderItem(ci, item)
-                item.setToolTip(col_name)
-        # tell the custom header which columns to paint vertically
-        header = table.horizontalHeader()
-        if isinstance(header, VerticalHeaderView):
-            header.set_vertical_columns(bit_names, columns)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        pass
+    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
 
 # ---------------------------------------------------------------------------
@@ -730,8 +747,12 @@ class DCOViewApp(QMainWindow):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    win = DCOViewApp()
+    app.setWindowIcon(_app_icon())
+
+    win = ConfigViewerApp()
     win.show()
     sys.exit(app.exec_())

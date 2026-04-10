@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Config Viewer – UI Concept Mockups</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --font-body: 'Satoshi', 'Inter', sans-serif;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem;
+  --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem;
+  --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
+  --radius-xl: 1rem; --radius-full: 9999px;
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* Light */
+  --bg: #f5f5f4; --surface: #ffffff; --surface-2: #fafaf9;
+  --border: #e0ddd8; --text: #1c1917; --text-muted: #78716c;
+  --text-faint: #a8a29e; --divider: #d6d3ce;
+  --dco-clr: #2563EB; --dco-light: #EFF6FF; --dco-border: #BFDBFE;
+  --ini-clr: #D97706; --ini-light: #FFFBEB; --ini-border: #FDE68A;
+  --none-clr: #6b7280; --none-light: #f9fafb; --none-border: #e5e7eb;
+  --ok: #16a34a; --warn: #dc2626; --info: #0369a1;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.10);
+}
+[data-theme="dark"] {
+  --bg: #171614; --surface: #1c1b19; --surface-2: #201f1d;
+  --border: #393836; --text: #cdccca; --text-muted: #79787b;
+  --text-faint: #5a5957; --divider: #262523;
+  --dco-light: #1e2d4a; --dco-border: #2d4a7a;
+  --ini-light: #2d1f05; --ini-border: #6b3d00;
+  --none-light: #232323; --none-border: #333;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.4);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body, sans-serif); background: var(--bg); color: var(--text); font-size: var(--text-sm); line-height: 1.55; min-height: 100vh; transition: background var(--transition), color var(--transition); }
+button { cursor: pointer; border: none; font: inherit; }
+
+/* ─── Page Shell ─── */
+.page-header { padding: var(--space-6) var(--space-8); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--surface); z-index: 200; box-shadow: var(--shadow-sm); }
+.page-title { font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.02em; }
+.page-subtitle { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+.theme-toggle { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-full); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--text-muted); display: flex; align-items: center; gap: var(--space-2); transition: background var(--transition), border-color var(--transition); }
+.theme-toggle:hover { background: var(--divider); }
+
+/* ─── Concept Nav ─── */
+.concept-nav { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-8); background: var(--surface-2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.concept-btn { padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); border: 1.5px solid var(--border); font-size: var(--text-xs); font-weight: 600; background: var(--surface); color: var(--text-muted); transition: all var(--transition); white-space: nowrap; }
+.concept-btn:hover { border-color: var(--dco-clr); color: var(--dco-clr); }
+.concept-btn.active { background: var(--dco-clr); border-color: var(--dco-clr); color: #fff; }
+
+/* ─── Main Layout ─── */
+.main { padding: var(--space-8); max-width: 1280px; margin: 0 auto; }
+.concept-panel { display: none; }
+.concept-panel.active { display: block; }
+.concept-title { font-size: var(--text-lg); font-weight: 700; margin-bottom: var(--space-2); letter-spacing: -0.01em; }
+.concept-desc { font-size: var(--text-sm); color: var(--text-muted); max-width: 72ch; margin-bottom: var(--space-8); line-height: 1.7; }
+.concept-desc strong { color: var(--text); }
+.section-label { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: var(--space-3); }
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); margin-bottom: var(--space-8); }
+@media (max-width: 900px) { .compare-grid { grid-template-columns: 1fr; } }
+.compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.compare-label { padding: var(--space-3) var(--space-4); font-size: var(--text-xs); font-weight: 700; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-2); }
+.badge-before { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: var(--radius-full); padding: 2px 8px; font-size: 11px; }
+.badge-after { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; border-radius: var(--radius-full); padding: 2px 8px; font-size: 11px; }
+.compare-body { padding: var(--space-5); }
+
+/* ─── Mockup App Window ─── */
+.app-window { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; font-size: 13px; }
+.app-titlebar { background: #e8e8e8; padding: 6px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d0d0d0; }
+[data-theme="dark"] .app-titlebar { background: #2a2928; border-color: #3a3937; }
+.traffic-lights { display: flex; gap: 5px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.dot-red { background: #ff5f56; } .dot-yellow { background: #ffbd2e; } .dot-green { background: #27c93f; }
+.app-title-text { font-size: 11px; color: var(--text-muted); margin-left: auto; margin-right: auto; font-weight: 600; }
+.app-toolbar { background: var(--surface-2); border-bottom: 1px solid var(--border); padding: 6px 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.app-tabs { background: #e8e8e8; border-bottom: 1px solid #c4c4c3; display: flex; align-items: flex-end; padding: 0 8px; gap: 3px; }
+[data-theme="dark"] .app-tabs { background: #252422; border-color: #393836; }
+.app-tab { padding: 5px 14px; font-size: 11px; border: 1px solid transparent; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; user-select: none; white-space: nowrap; transition: background var(--transition); min-width: 100px; text-align: center; }
+.app-tab.unset { background: #f0f0f0; color: #888; border-color: #c4c4c3; }
+[data-theme="dark"] .app-tab.unset { background: #2d2c2a; color: #666; border-color: #393836; }
+.app-tab.dco { background: #fff; color: #1d3557; border-color: #c4c4c3; font-weight: 600; border-bottom: 2px solid #2563EB; }
+[data-theme="dark"] .app-tab.dco { background: #1c2233; color: #90b4f0; border-color: #2d4a7a; border-bottom-color: #2563EB; }
+.app-tab.ini { background: #fff; color: #5c2a00; border-color: #c4c4c3; font-weight: 600; border-bottom: 2px solid #D97706; }
+[data-theme="dark"] .app-tab.ini { background: #2a1d06; color: #f0b060; border-color: #6b3d00; border-bottom-color: #D97706; }
+.app-tab.inactive { background: #e8e8e8; color: #777; }
+[data-theme="dark"] .app-tab.inactive { background: #252422; color: #555; }
+.app-tab.active-sel { background: #fff; font-weight: 700; }
+[data-theme="dark"] .app-tab.active-sel { background: #1c1b19; }
+.app-tab .mode-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+.tab-plus { width: 24px; height: 24px; border-radius: 4px; background: #e0e0e0; color: #555; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; margin-bottom: 2px; cursor: pointer; border: 1px solid #c4c4c3; }
+[data-theme="dark"] .tab-plus { background: #333; color: #aaa; border-color: #444; }
+.app-content { min-height: 120px; padding: 12px; background: var(--surface); }
+.app-content.empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; min-height: 160px; }
+
+/* ─── Btn Styles ─── */
+.tbtn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: default; }
+.tbtn.mode-dco { background: #2563EB; border-color: #1d4ed8; color: #fff; font-weight: 700; }
+.tbtn.mode-ini { background: #D97706; border-color: #b45309; color: #fff; font-weight: 700; }
+.tbtn.mode-none { background: #6b7280; border-color: #4b5563; color: #fff; font-weight: 700; opacity: 0.7; }
+.tbtn.disabled { opacity: 0.4; cursor: not-allowed; }
+.tbtn.accent { background: var(--dco-clr); border-color: var(--dco-clr); color: #fff; }
+.tbtn.plus { background: #f0f0f0; border: 1px solid #bbb; width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: bold; color: #333; border-radius: 4px; cursor: default; }
+[data-theme="dark"] .tbtn.plus { background: #333; color: #aaa; border-color: #555; }
+
+/* ─── Dropdown mockup ─── */
+.dropdown-mock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); width: 200px; overflow: hidden; display: inline-block; vertical-align: top; }
+.dd-item { padding: 8px 14px; font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: default; }
+.dd-item:hover, .dd-item.hover { background: var(--surface-2); }
+.dd-item.selected { font-weight: 600; }
+.dd-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dd-check { margin-left: auto; color: var(--text-muted); font-size: 11px; }
+.dd-sep { height: 1px; background: var(--divider); margin: 3px 0; }
+
+/* ─── Placeholder panel ─── */
+.placeholder-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 20px; gap: 10px; border-radius: var(--radius-lg); border: 2px dashed var(--border); min-height: 140px; }
+.placeholder-panel .icon { font-size: 32px; }
+.placeholder-panel .title { font-size: 13px; font-weight: 700; color: var(--text); }
+.placeholder-panel .sub { font-size: 11px; color: var(--text-muted); text-align: center; max-width: 240px; line-height: 1.5; }
+.placeholder-panel .mode-choice { display: flex; gap: 10px; margin-top: 6px; }
+.mc-btn { padding: 7px 18px; border-radius: var(--radius-md); border: 2px solid; font-size: 12px; font-weight: 700; cursor: default; display: flex; align-items: center; gap: 6px; }
+.mc-btn.dco { background: var(--dco-light); border-color: var(--dco-clr); color: var(--dco-clr); }
+.mc-btn.ini { background: var(--ini-light); border-color: var(--ini-clr); color: var(--ini-clr); }
+
+/* ─── Warning popup ─── */
+.popup-mock { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 18px 22px; max-width: 340px; }
+.popup-icon { font-size: 22px; }
+.popup-title { font-size: 13px; font-weight: 700; color: #dc2626; margin: 8px 0 4px; }
+.popup-body { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.popup-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.popup-btn { padding: 5px 14px; border-radius: var(--radius-md); font-size: 11px; font-weight: 700; cursor: default; border: 1px solid; }
+.popup-btn.ok { background: #dc2626; border-color: #dc2626; color: #fff; }
+.popup-btn.secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
+.popup-btn.positive { background: var(--dco-clr); border-color: var(--dco-clr); color: #fff; }
+
+/* ─── Filter bar ─── */
+.filter-bar { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 5px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fcb { font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.fcb-box { width: 12px; height: 12px; border-radius: 2px; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; }
+.fcb-box.checked { background: var(--dco-clr); border-color: var(--dco-clr); color: #fff; }
+
+/* ─── Table mock ─── */
+.table-mock { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; font-size: 11px; }
+.table-mock table { width: 100%; border-collapse: collapse; }
+.table-mock th { background: #2F5496; color: #fff; padding: 5px 8px; font-weight: 700; font-size: 10px; text-align: center; border-right: 1px solid rgba(255,255,255,0.15); }
+.table-mock th.pos { background: #4472C4; }
+.table-mock th.reg { background: #ED7D31; }
+.table-mock th.lst { background: #A5A5A5; }
+.table-mock th.sic { background: #FFC000; color: #333; }
+.table-mock td { padding: 4px 8px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.table-mock tr:last-child td { border-bottom: none; }
+.table-mock tr:nth-child(even) td { background: var(--surface-2); }
+
+/* ─── Mode badge in tab ─── */
+.mode-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius-full); font-size: 10px; font-weight: 700; }
+.mode-badge.dco { background: var(--dco-light); color: var(--dco-clr); border: 1px solid var(--dco-border); }
+.mode-badge.ini { background: var(--ini-light); color: var(--ini-clr); border: 1px solid var(--ini-border); }
+.mode-badge.none { background: var(--none-light); color: var(--none-clr); border: 1px solid var(--none-border); }
+
+/* ─── Callout boxes ─── */
+.callout { border-radius: var(--radius-md); padding: var(--space-4); font-size: var(--text-xs); line-height: 1.7; border-left: 3px solid; margin-bottom: var(--space-4); }
+.callout.info { background: #eff6ff; border-color: #2563EB; color: #1d3557; }
+.callout.warn { background: #fef2f2; border-color: #dc2626; color: #7f1d1d; }
+.callout.ok { background: #f0fdf4; border-color: #16a34a; color: #14532d; }
+[data-theme="dark"] .callout.info { background: #1e2d4a; color: #90b4f0; }
+[data-theme="dark"] .callout.warn { background: #2d1010; color: #f0a0a0; }
+[data-theme="dark"] .callout.ok { background: #0d2818; color: #80c080; }
+.callout strong { display: block; margin-bottom: 4px; font-size: 12px; }
+
+/* ─── Annotation line ─── */
+.anno { display: flex; align-items: flex-start; gap: var(--space-3); margin: var(--space-3) 0; padding: var(--space-3); background: var(--surface-2); border-radius: var(--radius-md); border: 1px solid var(--border); }
+.anno-num { width: 20px; height: 20px; border-radius: 50%; background: var(--dco-clr); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.anno-text { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.anno-text strong { color: var(--text); }
+
+/* ─── Path label ─── */
+.path-label { background: #fff; border: 1px solid #aaa; border-radius: 3px; padding: 3px 10px; font-size: 11px; color: var(--text-muted); flex: 1; min-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-theme="dark"] .path-label { background: #252422; border-color: #555; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <div>
+    <div class="page-title">Config Viewer — UI Concept Mockups</div>
+    <div class="page-subtitle">3 structural changes visualised · Click a concept below to explore</div>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙 Dark / Light</button>
+</header>
+
+<nav class="concept-nav">
+  <button class="concept-btn active" onclick="show('c1',this)">① Mode = None Start State</button>
+  <button class="concept-btn" onclick="show('c2',this)">② File Validation &amp; Wrong-type Warning</button>
+  <button class="concept-btn" onclick="show('c3',this)">③ Smarter Mode Button Behaviour</button>
+  <button class="concept-btn" onclick="show('c4',this)">④ Full App Side-by-Side</button>
+</nav>
+
+<main class="main">
+
+<!-- ══════ CONCEPT 1 ══════ -->
+<section class="concept-panel active" id="c1">
+  <div class="concept-title">① Mode = None — No mode selected at startup</div>
+  <p class="concept-desc">
+    Currently the app starts with <strong>DCO pre-selected</strong> and creates a tab immediately. 
+    This confuses users who want INI mode — they have to switch, causing an unintended extra tab.
+    The fix: on startup (and every new tab), the session starts with <strong>no mode chosen</strong>. 
+    A centred placeholder tells the user exactly what to do. Select Folder and Recent are <strong>disabled/greyed</strong> until a mode is picked.
+  </p>
+
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">🔴 <span class="badge-before">Current behaviour</span> — App starts with DCO pre-selected</div>
+      <div class="compare-body">
+        <div style="margin-bottom:10px">
+          <div class="section-label">Toolbar</div>
+          <div class="app-toolbar">
+            <div class="tbtn mode-dco">🔵 DCO Mode ▾</div>
+            <div class="tbtn">Select Folder</div>
+            <div class="tbtn">▾ Recent</div>
+            <div class="tbtn plus">+</div>
+            <div class="path-label">No folder selected</div>
+            <div class="tbtn">Export as Excel</div>
+            <div class="tbtn">?</div>
+          </div>
+        </div>
+        <div class="app-tabs" style="margin-bottom:10px">
+          <div class="app-tab dco active-sel">🔵 New Tab 1</div>
+          <div class="tab-plus">+</div>
+        </div>
+        <div class="app-content">
+          <div class="filter-bar">
+            <span class="section-label" style="margin:0">Filter:</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Position</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Regelung</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Last</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Sicherheiten</span>
+          </div>
+          <div class="app-content empty" style="min-height:80px; color: var(--text-muted); font-size:12px; padding: 10px 0 0">
+            📂 No files loaded — Select Folder above
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-card">
+      <div class="compare-label">🟢 <span class="badge-after">New behaviour</span> — Placeholder, no mode pre-selected</div>
+      <div class="compare-body">
+        <div style="margin-bottom:10px">
+          <div class="section-label">Toolbar — notice disabled buttons until mode is chosen</div>
+          <div class="app-toolbar">
+            <div class="tbtn mode-none">⚙ Mode… ▾</div>
+            <div class="tbtn disabled">Select Folder</div>
+            <div class="tbtn disabled">▾ Recent</div>
+            <div class="tbtn plus">+</div>
+            <div class="path-label" style="color: var(--text-faint); font-style:italic">Choose a mode to begin</div>
+            <div class="tbtn disabled">Export as Excel</div>
+            <div class="tbtn">?</div>
+          </div>
+        </div>
+        <div class="app-tabs" style="margin-bottom:10px">
+          <div class="app-tab unset active-sel">⚙ New Tab 1</div>
+          <div class="tab-plus">+</div>
+        </div>
+        <div class="app-content">
+          <div class="placeholder-panel">
+            <div class="icon">📋</div>
+            <div class="title">Choose a mode to start</div>
+            <div class="sub">Select DCO to load binary .dco files, or SC.INI to load drive configuration files.</div>
+            <div class="mode-choice">
+              <div class="mc-btn dco">🔵 DCO Mode</div>
+              <div class="mc-btn ini">🟠 SC.INI Mode</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">After mode is chosen — tab activates properly</div>
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">After clicking <strong>DCO Mode</strong> in placeholder</div>
+      <div class="compare-body">
+        <div class="app-tabs" style="margin-bottom:10px">
+          <div class="app-tab dco active-sel">🔵 New Tab 1</div>
+          <div class="tab-plus">+</div>
+        </div>
+        <div class="app-content">
+          <div class="filter-bar" style="margin-bottom:8px">
+            <span class="section-label" style="margin:0; font-size:10px">DCO Filter:</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Position</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Regelung</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Last</span>
+            <span class="fcb"><span class="fcb-box">□</span> Sicherheiten</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Locking</span>
+          </div>
+          <div class="app-content empty" style="min-height:70px; font-size:11px; color:var(--text-muted);">
+            📂 DCO mode ready — click Select Folder to load .dco files
+          </div>
+        </div>
+        <div class="app-toolbar" style="margin-top:8px; border-radius:0 0 6px 6px; border-top: 1px solid var(--border);">
+          <div class="tbtn mode-dco">🔵 DCO Mode ▾</div>
+          <div class="tbtn">Select Folder</div>
+          <div class="tbtn">▾ Recent</div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-label">After clicking <strong>SC.INI Mode</strong> in placeholder</div>
+      <div class="compare-body">
+        <div class="app-tabs" style="margin-bottom:10px">
+          <div class="app-tab ini active-sel">🟠 New Tab 1</div>
+          <div class="tab-plus">+</div>
+        </div>
+        <div class="app-content">
+          <div class="filter-bar" style="margin-bottom:8px">
+            <span class="section-label" style="margin:0; font-size:10px">INI Filter:</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Pos/Geschw.</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Sicherheit</span>
+            <span class="fcb"><span class="fcb-box checked">✓</span> Antriebstyp</span>
+            <span class="fcb"><span class="fcb-box">□</span> Sonstige</span>
+          </div>
+          <div class="app-content empty" style="min-height:70px; font-size:11px; color:var(--text-muted);">
+            📂 SC.INI mode ready — click Select Folder to load .ini files
+          </div>
+        </div>
+        <div class="app-toolbar" style="margin-top:8px; border-radius:0 0 6px 6px; border-top: 1px solid var(--border);">
+          <div class="tbtn mode-ini">🟠 SC.INI ▾</div>
+          <div class="tbtn">Select Folder</div>
+          <div class="tbtn">▾ Recent</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info"><strong>Key behaviour rules for Concept 1</strong>
+    • On app start: one tab, mode=None, placeholder shown, Select Folder + Recent disabled.<br>
+    • Clicking + (new tab) always creates another mode=None tab with same placeholder.<br>
+    • Once mode is chosen IN the placeholder, that tab transitions — no new tab opened.<br>
+    • Tab title shows ⚙ until mode chosen, then 🔵/🟠 + folder name or "New Tab N".</div>
+</section>
+
+<!-- ══════ CONCEPT 2 ══════ -->
+<section class="concept-panel" id="c2">
+  <div class="concept-title">② File Validation — Wrong file type blocked with clear popup</div>
+  <p class="concept-desc">
+    When a user in <strong>DCO mode</strong> accidentally selects an <code>.ini</code> file (via Select Folder or Recent), 
+    the app currently silently fails or loads nothing. The fix: a single <code>validate_files_for_mode()</code> function 
+    checks extensions <em>before</em> any decode call, shows a <strong>warning popup</strong>, and optionally offers 
+    to open the files in a new correct-mode tab.
+  </p>
+
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">🔴 <span class="badge-before">Current</span> — Wrong file silently ignored or causes error</div>
+      <div class="compare-body">
+        <div class="callout warn" style="margin-bottom:10px">
+          <strong>Bug scenario:</strong>
+          User is in DCO tab, opens Recent, picks a folder that was saved as an INI session. 
+          App tries to load .ini files as .dco → either loads nothing or throws an opaque read error popup.
+        </div>
+        <div style="font-size:12px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+          <div style="margin-bottom:6px; font-weight:700; color:var(--text)">What the user sees (Read errors popup):</div>
+          <div style="background:#fff; border:1px solid #ddd; border-radius:4px; padding:10px; font-size:11px;">
+            ⚠️ <strong>Read errors</strong><br><br>
+            sc_drive_a.ini: file too small: 2048 bytes, need 2256<br>
+            sc_drive_b.ini: file too small: 1984 bytes, need 2256<br>
+            sc_drive_c.ini: file too small: 1792 bytes, need 2256<br>
+            <span style="color:#aaa">…</span>
+          </div>
+          <div style="margin-top:8px; font-size:11px; color:#dc2626">No explanation of why, no way to fix it from here.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-card">
+      <div class="compare-label">🟢 <span class="badge-after">New</span> — Clear warning popup with action options</div>
+      <div class="compare-body">
+        <div class="popup-mock">
+          <div class="popup-icon">🚫</div>
+          <div class="popup-title">Wrong file type for DCO Mode</div>
+          <div class="popup-body">
+            The selected files are <strong>.ini</strong> files, but this tab is in <strong>DCO mode</strong> (expects .dco files).<br><br>
+            Please select <strong>.dco files</strong> for this tab, or open these INI files in a new SC.INI tab.
+          </div>
+          <div class="popup-actions">
+            <div class="popup-btn ok">OK — Try again</div>
+            <div class="popup-btn positive">Open in new INI tab</div>
+          </div>
+        </div>
+        <div class="callout ok" style="margin-top:12px"><strong>If user clicks "Open in new INI tab":</strong> a new tab is created in INI mode, the files are loaded there, and the original DCO tab is untouched.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Same logic — INI tab receiving a .dco file</div>
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">🟠 INI tab: user loads .dco files via Select Folder</div>
+      <div class="compare-body">
+        <div class="popup-mock">
+          <div class="popup-icon">🚫</div>
+          <div class="popup-title">Wrong file type for SC.INI Mode</div>
+          <div class="popup-body">
+            The selected files are <strong>.dco</strong> files, but this tab is in <strong>SC.INI mode</strong> (expects sc.ini files).<br><br>
+            Please select <strong>.ini files</strong> for this tab, or open these DCO files in a new DCO tab.
+          </div>
+          <div class="popup-actions">
+            <div class="popup-btn ok">OK — Try again</div>
+            <div class="popup-btn" style="background:#2563EB; border-color:#2563EB; color:#fff; font-weight:700; font-size:11px; padding:5px 12px; border-radius:4px; cursor:default;">Open in new DCO tab</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-card">
+      <div class="compare-label">🔵 Recent folder opens in wrong-mode tab</div>
+      <div class="compare-body">
+        <div class="callout info" style="margin-bottom:10px">
+          <strong>How Recent detection works:</strong>
+          Recent entries store folder + file basenames. When reopening, 
+          <code>validate_files_for_mode()</code> checks if all stored basenames end with the 
+          expected extension for the active tab's mode. If mismatch → warning popup before any load.
+        </div>
+        <div class="anno">
+          <div class="anno-num">1</div>
+          <div class="anno-text"><strong>validate_files_for_mode(mode, paths)</strong> — called at the START of both <code>open()</code> and <code>openrecent()</code>, before any decode.</div>
+        </div>
+        <div class="anno">
+          <div class="anno-num">2</div>
+          <div class="anno-text">Function checks: wrong extension in list? → show popup. User picks "OK" → nothing loaded. User picks "Open in new tab" → create tab, load there.</div>
+        </div>
+        <div class="anno">
+          <div class="anno-num">3</div>
+          <div class="anno-text"><strong>Core decode functions not touched.</strong> <code>decodedco()</code> and <code>decodeini()</code> are unchanged — validation is purely a UI routing layer.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════ CONCEPT 3 ══════ -->
+<section class="concept-panel" id="c3">
+  <div class="concept-title">③ Smarter Mode Button — Less confusing, context-aware</div>
+  <p class="concept-desc">
+    The current "Mode" button <strong>always opens a new tab</strong> when you switch, which users read as 
+    "I changed the current tab's mode". The fix: the button's behaviour depends on whether the 
+    <strong>active tab already has a mode set</strong>. It becomes a simple context indicator when data exists, 
+    and a chooser only for uninitialized tabs.
+  </p>
+
+  <div class="compare-grid">
+    <div class="compare-card">
+      <div class="compare-label">🔴 <span class="badge-before">Current</span> — Clicking mode always opens new tab, confusing</div>
+      <div class="compare-body">
+        <div class="callout warn" style="margin-bottom:12px">
+          <strong>The confusion:</strong> User sees "DCO Mode" button and thinks "I'll switch to INI" → clicks → 
+          a new tab appears out of nowhere. They expected the current tab to change. Now they have two tabs.
+        </div>
+        <div class="section-label">Current dropdown behaviour (always same)</div>
+        <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <div class="tbtn mode-dco" style="margin-bottom:8px">🔵 DCO Mode ▾</div>
+          </div>
+          <div class="dropdown-mock">
+            <div class="dd-item selected"><span class="dd-dot" style="background:#2563EB"></span> DCO Mode <span class="dd-check">✓</span></div>
+            <div class="dd-item"><span class="dd-dot" style="background:#D97706"></span> SC.INI Mode</div>
+          </div>
+        </div>
+        <div style="margin-top:12px; font-size:11px; color:#dc2626">
+          → Selecting "SC.INI Mode" always opens a new tab, even if current tab has no data
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-card">
+      <div class="compare-label">🟢 <span class="badge-after">New</span> — Three distinct states for the button</div>
+      <div class="compare-body">
+        <div style="display:flex; flex-direction:column; gap:16px;">
+
+          <!-- State A -->
+          <div>
+            <div class="section-label">State A: Tab has no mode (new/unset)</div>
+            <div style="display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-bottom:6px;">
+              <div class="tbtn mode-none">⚙ Choose Mode ▾</div>
+              <div class="dropdown-mock">
+                <div class="dd-item hover"><span class="dd-dot" style="background:#2563EB"></span> Open as DCO tab</div>
+                <div class="dd-item"><span class="dd-dot" style="background:#D97706"></span> Open as SC.INI tab</div>
+              </div>
+            </div>
+            <div class="callout ok" style="margin-bottom:0; font-size:11px; padding:6px 10px;">→ Sets mode on <em>this</em> tab. No new tab created.</div>
+          </div>
+
+          <!-- State B -->
+          <div>
+            <div class="section-label">State B: Tab has mode, no data yet (empty DCO tab)</div>
+            <div style="display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-bottom:6px;">
+              <div class="tbtn mode-dco">🔵 DCO Mode ▾</div>
+              <div class="dropdown-mock">
+                <div class="dd-item selected"><span class="dd-dot" style="background:#2563EB"></span> DCO Mode (current) <span class="dd-check">✓</span></div>
+                <div class="dd-sep"></div>
+                <div class="dd-item"><span class="dd-dot" style="background:#D97706"></span> New SC.INI tab →</div>
+                <div class="dd-item" style="color:#6b7280; font-size:11px; padding-top:4px;">Change this tab to INI…</div>
+              </div>
+            </div>
+            <div class="callout info" style="margin-bottom:0; font-size:11px; padding:6px 10px;">→ "Change this tab to INI" re-initialises same tab. "New SC.INI tab" creates a fresh tab.</div>
+          </div>
+
+          <!-- State C -->
+          <div>
+            <div class="section-label">State C: Tab has data loaded — mode is locked, button is indicator only</div>
+            <div style="display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-bottom:6px;">
+              <div class="tbtn mode-dco" style="opacity:1; cursor:default">🔵 DCO Mode ▾</div>
+              <div class="dropdown-mock">
+                <div class="dd-item" style="color:var(--text-muted); font-size:11px; padding: 6px 14px; font-style:italic;">This tab has data — mode locked</div>
+                <div class="dd-sep"></div>
+                <div class="dd-item"><span class="dd-dot" style="background:#2563EB"></span> New DCO tab →</div>
+                <div class="dd-item"><span class="dd-dot" style="background:#D97706"></span> New SC.INI tab →</div>
+              </div>
+            </div>
+            <div class="callout ok" style="margin-bottom:0; font-size:11px; padding:6px 10px;">→ Mode of loaded tab is never changed. Can only open new tabs from here. Prevents accidents.</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Tab bar — visual mode indicators in tab titles</div>
+  <div class="compare-card" style="margin-bottom: var(--space-8);">
+    <div class="compare-label">How tabs look with different states</div>
+    <div class="compare-body">
+      <div class="app-tabs" style="margin-bottom:12px;">
+        <div class="app-tab dco active-sel">🔵 Antriebe_2024</div>
+        <div class="app-tab ini inactive">🟠 SPS-Config</div>
+        <div class="app-tab unset inactive">⚙ New Tab 3</div>
+        <div class="tab-plus">+</div>
+      </div>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--text-muted);">
+        <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#2563EB;"></span> 🔵 = DCO tab with data</div>
+        <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#D97706;"></span> 🟠 = INI tab (any state)</div>
+        <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#6b7280;"></span> ⚙ = No mode chosen yet</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════ CONCEPT 4 ══════ -->
+<section class="concept-panel" id="c4">
+  <div class="concept-title">④ Full App — Before vs After side-by-side</div>
+  <p class="concept-desc">
+    Complete toolbar and tab experience. Left shows current main_v4 behaviour, 
+    right shows all three fixes applied together.
+  </p>
+
+  <div class="section-label">Current (Before) — full app running with 2 tabs</div>
+  <div class="app-window" style="margin-bottom:var(--space-8);">
+    <div class="app-titlebar">
+      <div class="traffic-lights"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+      <div class="app-title-text">Config Viewer</div>
+    </div>
+    <div class="app-toolbar">
+      <div class="tbtn mode-dco">🔵 DCO Mode ▾</div>
+      <div class="tbtn">Select Folder</div>
+      <div class="tbtn">▾</div>
+      <div class="tbtn plus">+</div>
+      <div class="path-label">C:/Projects/Antriebe_2024</div>
+      <div class="tbtn" style="margin-left:auto;">Export as Excel</div>
+      <div class="tbtn">?</div>
+    </div>
+    <div class="app-tabs">
+      <div class="app-tab dco active-sel">🔵 Antriebe_2024 DCO</div>
+      <div class="app-tab ini inactive">🟠 SPS-Config SC.INI</div>
+      <div class="tab-plus">+</div>
+    </div>
+    <div class="app-content">
+      <div class="filter-bar" style="margin-bottom:8px;">
+        <span style="font-size:10px; color:var(--text-faint); font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Filter:</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Position</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Regelung</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Last</span>
+        <span class="fcb"><span class="fcb-box">□</span> Sicherheiten</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Geschwindigkeit</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Locking</span>
+        <span class="fcb"><span class="fcb-box">□</span> Optional</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Sonstige</span>
+      </div>
+      <div class="table-mock">
+        <table>
+          <thead>
+            <tr>
+              <th style="background:#2F5496">Name</th>
+              <th class="pos">projectcode</th><th class="pos">drvname</th>
+              <th class="reg">p-val</th><th class="reg">i-val</th><th class="reg">ff-val</th>
+              <th class="pos">max.speed</th><th class="pos">upperlimit</th>
+              <th class="lst">loadlimit</th><th class="sic">safetyrelay1</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>antrieb_01.dco</td><td>BBH001</td><td>DR01</td><td>0.2500</td><td>0.1250</td><td>0.0000</td><td>100</td><td>4500</td><td>250</td><td>1</td></tr>
+            <tr><td>antrieb_02.dco</td><td>BBH002</td><td>DR02</td><td>0.3125</td><td>0.0625</td><td>0.0000</td><td>80</td><td>4200</td><td>200</td><td>1</td></tr>
+            <tr><td>antrieb_03.dco</td><td>BBH003</td><td>DR03</td><td>0.1875</td><td>0.2500</td><td>0.0625</td><td>120</td><td>5000</td><td>300</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">After all 3 fixes — correct multi-tab scenario</div>
+  <div class="app-window" style="margin-bottom:var(--space-8);">
+    <div class="app-titlebar">
+      <div class="traffic-lights"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+      <div class="app-title-text">Config Viewer</div>
+    </div>
+    <div class="app-toolbar">
+      <!-- Mode button reflects ACTIVE tab, state C (data loaded = indicator only) -->
+      <div class="tbtn mode-dco">🔵 DCO Mode ▾</div>
+      <div class="tbtn">Select Folder</div>
+      <div class="tbtn">▾ Recent</div>
+      <div class="tbtn plus">+</div>
+      <div class="path-label">C:/Projects/Antriebe_2024</div>
+      <div class="tbtn" style="margin-left:auto;">Export as Excel</div>
+      <div class="tbtn">?</div>
+    </div>
+    <div class="app-tabs">
+      <div class="app-tab dco active-sel">🔵 Antriebe_2024</div>
+      <div class="app-tab ini inactive">🟠 SPS-Config</div>
+      <div class="app-tab unset inactive">⚙ New Tab 3</div>
+      <div class="tab-plus">+</div>
+    </div>
+    <div class="app-content">
+      <div class="filter-bar" style="margin-bottom:8px;">
+        <span style="font-size:10px; color:var(--text-faint); font-weight:700; text-transform:uppercase; letter-spacing:.05em;">DCO Filter:</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Position</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Regelung</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Last</span>
+        <span class="fcb"><span class="fcb-box">□</span> Sicherheiten</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Geschwindigkeit</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Locking</span>
+        <span class="fcb"><span class="fcb-box">□</span> Optional</span>
+        <span class="fcb"><span class="fcb-box checked">✓</span> Sonstige</span>
+      </div>
+      <div class="table-mock">
+        <table>
+          <thead>
+            <tr>
+              <th style="background:#2F5496">Name</th>
+              <th class="pos">projectcode</th><th class="pos">drvname</th>
+              <th class="reg">p-val</th><th class="reg">i-val</th>
+              <th class="pos">max.speed</th><th class="pos">upperlimit</th>
+              <th class="lst">loadlimit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>antrieb_01.dco</td><td>BBH001</td><td>DR01</td><td>0.2500</td><td>0.1250</td><td>100</td><td>4500</td><td>250</td></tr>
+            <tr><td>antrieb_02.dco</td><td>BBH002</td><td>DR02</td><td>0.3125</td><td>0.0625</td><td>80</td><td>4200</td><td>200</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Tab 3 selected — unset placeholder active</div>
+  <div class="app-window">
+    <div class="app-titlebar">
+      <div class="traffic-lights"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+      <div class="app-title-text">Config Viewer</div>
+    </div>
+    <div class="app-toolbar">
+      <!-- Mode button now shows "Choose Mode" because tab 3 is unset -->
+      <div class="tbtn mode-none">⚙ Choose Mode ▾</div>
+      <div class="tbtn disabled">Select Folder</div>
+      <div class="tbtn disabled">▾ Recent</div>
+      <div class="tbtn plus">+</div>
+      <div class="path-label" style="color:var(--text-faint); font-style:italic;">Choose a mode to begin</div>
+      <div class="tbtn disabled" style="margin-left:auto;">Export as Excel</div>
+      <div class="tbtn">?</div>
+    </div>
+    <div class="app-tabs">
+      <div class="app-tab dco inactive">🔵 Antriebe_2024</div>
+      <div class="app-tab ini inactive">🟠 SPS-Config</div>
+      <div class="app-tab unset active-sel">⚙ New Tab 3</div>
+      <div class="tab-plus">+</div>
+    </div>
+    <div class="app-content">
+      <div class="placeholder-panel">
+        <div class="icon">📋</div>
+        <div class="title">Choose a mode to start</div>
+        <div class="sub">Select DCO to load binary .dco files, or SC.INI to load drive configuration files.</div>
+        <div class="mode-choice">
+          <div class="mc-btn dco">🔵 DCO Mode</div>
+          <div class="mc-btn ini">🟠 SC.INI Mode</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.concept-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.concept-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+function toggleTheme() {
+  const html = document.documentElement;
+  html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>
